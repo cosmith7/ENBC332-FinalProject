@@ -1,0 +1,231 @@
+ENBC332: Final Project
+
+Authors:
+Catherine Smith
+Paul Oh
+Armand-Nicolas Tica
+
+
+Importing Data set:
+
+```{r}
+
+data <- read.csv("data.csv")
+labels <- read.csv("labels.csv")
+
+# preview the data
+head(data)
+head(labels)
+
+dim(data)
+
+```
+
+We have 800 samples with over 20k corresponding gene expression values.
+
+First, we can create a vector for each of the five cancer types, then store their corresponding sample IDs.
+
+```{r}
+
+# in labels.csv, split column X by the Class column
+
+class_lists <- split(labels$X, labels$Class)
+
+# extract into five lists
+
+# breast
+BRCA_samples <- as.list(class_lists$BRCA)
+
+# kidney
+KIRC_samples <- as.list(class_lists$KIRC)
+
+# colon
+COAD_samples <- as.list(class_lists$COAD)
+
+# lung
+LUAD_samples <- as.list(class_lists$LUAD)
+
+# prostate
+PRAD_samples <- as.list(class_lists$PRAD)
+
+```
+
+Then, it would be helpful to visualize gene expression by cancer type to understand
+which genes are most informative.
+
+```{r}
+
+# function for gene breakdown (by sample)
+
+sample_breakdown <- function(id, top_n = 20) {
+
+  # find the sample
+  sample_row <- which(data[[1]] == id)
+
+  if (length(sample_row) == 0) {
+    stop("Sample ID not found in data.csv: ", id)
+  }
+
+  # extract gene expression values
+  expressions <- as.numeric(data[sample_row[1], -1])
+
+  # get gene names
+  genes <- names(data)[-1]
+
+  # remove missing or non-finite values
+  valid <- is.finite(expressions)
+  expressions <- expressions[valid]
+  genes <- genes[valid]
+
+  # sort genes by expression, highest first
+  ord <- order(expressions, decreasing = TRUE)
+  n <- min(top_n, length(ord))
+
+  top_genes <- genes[ord[seq_len(n)]]
+  top_expressions <- expressions[ord[seq_len(n)]]
+
+  # find cancer type from labels.csv
+  label_row <- which(labels$X == id)
+  cancer_type <- if (length(label_row) > 0) {
+    as.character(labels$Class[label_row[1]])
+  } else {
+    "Unknown"
+  }
+
+  # print helpful information
+  cat("Sample ID:", id, "\n")
+  cat("Cancer type:", cancer_type, "\n")
+  cat("Total genes:", length(expressions), "\n")
+  cat("Mean expression:", round(mean(expressions), 3), "\n")
+  cat("Median expression:", round(median(expressions), 3), "\n")
+  cat("\nTop", n, "most highly expressed genes:\n")
+
+  print(data.frame(
+    Gene = top_genes,
+    Expression = round(top_expressions, 3)
+  ), row.names = FALSE)
+
+  # Plot the top genes
+  par(mar = c(10, 5, 4, 2))
+
+  barplot(
+    top_expressions,
+    names.arg = top_genes,
+    las = 2,
+    col = "steelblue",
+    main = paste("Top", n, "Expressed Genes -", id),
+    xlab = "Gene",
+    ylab = "Expression",
+    cex.names = 0.7
+  )
+
+  # return the results invisibly for further analysis
+  invisible(data.frame(
+    Gene = top_genes,
+    Expression = top_expressions
+  ))
+}
+
+sample_breakdown("sample_790")
+
+
+```
+
+```{r}
+
+# function for gene breakdown (by cancer)
+
+cancer_breakdown <- function(cancer_type, top_n = 20) {
+
+  # validate cancer type
+  valid_types <- unique(as.character(labels$Class))
+
+  if (!cancer_type %in% valid_types) {
+    stop(
+      "Invalid cancer type. Choose from: ",
+      paste(valid_types, collapse = ", ")
+    )
+  }
+
+  # get sample IDs for this cancer type
+  sample_ids <- as.character(
+    labels$X[labels$Class == cancer_type]
+  )
+
+  # match sample IDs to rows in data
+  sample_rows <- match(sample_ids, data[[1]])
+  sample_rows <- sample_rows[!is.na(sample_rows)]
+
+  if (length(sample_rows) == 0) {
+    stop("No matching samples found for ", cancer_type)
+  }
+
+  # extract expression matrix
+  expression_matrix <- data[sample_rows, -1, drop = FALSE]
+
+  # convert columns to numeric
+  expression_matrix[] <- lapply(
+    expression_matrix,
+    function(x) as.numeric(as.character(x))
+  )
+
+  expression_matrix <- as.matrix(expression_matrix)
+
+  # calculate mean expression for each gene
+  mean_expression <- colMeans(
+    expression_matrix,
+    na.rm = TRUE
+  )
+
+  # remove non-finite values
+  valid <- is.finite(mean_expression)
+  mean_expression <- mean_expression[valid]
+
+  # select top genes
+  ord <- order(mean_expression, decreasing = TRUE)
+  n <- min(top_n, length(ord))
+
+  top_genes <- names(mean_expression)[ord[seq_len(n)]]
+  top_expressions <- mean_expression[ord[seq_len(n)]]
+
+  # print summary information
+  cat("Cancer type:", cancer_type, "\n")
+  cat("Number of samples:", length(sample_rows), "\n")
+  cat("Number of genes analyzed:", length(mean_expression), "\n")
+  cat("Mean expression across genes:",
+      round(mean(mean_expression), 3), "\n")
+  cat("\nTop", n, "genes by average expression:\n")
+
+  print(data.frame(
+    Gene = top_genes,
+    Mean_Expression = round(top_expressions, 3)
+  ), row.names = FALSE)
+
+  # Plot results
+  par(mar = c(10, 5, 4, 2))
+
+  barplot(
+    top_expressions,
+    names.arg = top_genes,
+    las = 2,
+    col = "darkorange",
+    main = paste("Top", n, "Expressed Genes -", cancer_type),
+    xlab = "Gene",
+    ylab = "Mean Expression",
+    cex.names = 0.7
+  )
+
+  # return results for further analysis
+  invisible(data.frame(
+    Gene = top_genes,
+    Mean_Expression = top_expressions
+  ))
+}
+
+# Lung
+cancer_breakdown("LUAD")
+
+# BRCA
+cancer_breakdown("BRCA")
+
+```
